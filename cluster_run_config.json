@@ -1,0 +1,20 @@
+[
+    {
+        "cluster_id": 1,
+        "file": "EV_Load_Cluster_1.csv",
+        "stations_count": 28,
+        "enc_in": 35
+    },
+    {
+        "cluster_id": 0,
+        "file": "EV_Load_Cluster_0.csv",
+        "stations_count": 29,
+        "enc_in": 36
+    },
+    {
+        "cluster_id": 2,
+        "file": "EV_Load_Cluster_2.csv",
+        "stations_count": 22,
+        "enc_in": 29
+    }
+]
