@@ -156,6 +156,46 @@ class Model(nn.Module):
                     trust_remote_code=True,
                     local_files_only=False
                 )
+        # ===== 添加以下针对 Qwen 的代码 =====
+        elif 'qwen' in configs.llm_model.lower():
+            from transformers import AutoModel, AutoTokenizer, AutoConfig, BitsAndBytesConfig
+            import torch
+            
+            print(f"Loading Qwen model from {configs.llm_model}...")
+            self.llm_config = AutoConfig.from_pretrained(
+                configs.llm_model, 
+                trust_remote_code=True
+            )
+            
+            # 【A10 单卡量化保命方案】: 修复了直接传 load_in_4bit 报错的问题，采用标准 Config
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4"
+            )
+            
+            self.llm_model = AutoModel.from_pretrained(
+                configs.llm_model,
+                trust_remote_code=True,
+                quantization_config=quantization_config, # 使用标准配置传入量化参数
+                attn_implementation="sdpa",              # 使用 PyTorch 原生加速，完美避开 flash-attn 编译报错
+                device_map="auto"
+            )
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                configs.llm_model,
+                trust_remote_code=True
+            )
+            
+            # 对齐 Padding Token 以免报错
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            self.llm_model.config.pad_token_id = self.tokenizer.pad_token_id
+                
+            # 获取 Qwen 的 hidden_size 供后续特征投影使用
+            self.llm_dim = self.llm_config.hidden_size 
+        # ====================================
+        
         else:
             raise Exception('LLM model is not defined')
 
