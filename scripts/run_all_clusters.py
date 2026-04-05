@@ -44,10 +44,12 @@ BASE_ARGS = [
     '--d_ff', '256',   # Increased from 128 to 256
     '--batch_size', '1', # Decreased to 1 to avoid OOM
     '--learning_rate', '0.0001', # Reduced from 0.0005 to 0.0001 for finer convergence
-    '--llm_layers', '4', # Maintained at 4 (Good balance)
+    '--llm_layers', '32', # Maintained at 32 (Good balance)
     '--train_epochs', '5', # Maintained at 10
     '--patience', '3',     # Maintained at 3
-    '--llm_model', 'GPT2', 
+    '--llm_model', '../local_models/Qwen3.5-9B', 
+    '--llm_dim', '4096',
+    '--llm_layers', '32',
     '--itr', '1',
     '--model_comment', 'Cluster_Training_Run' # Added required argument
 ]
