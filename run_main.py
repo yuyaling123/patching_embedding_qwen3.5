@@ -221,7 +221,7 @@ def main():
     #parser.add_argument('--llm_dim', type=int, default=768, help='LLM model dimension')
     parser.add_argument('--llm_dim', type=int, default=4096, help='LLM model dimension (Qwen-9B is 4096)')
     #parser.add_argument('--llm_layers', type=int, default=6, help='number of LLM layers')
-    parser.add_argument('--llm_layers', type=int, default=6, help='LLM model layers')
+    parser.add_argument('--llm_layers', type=int, default=32, help='LLM model layers')
 
     # Optimization
     parser.add_argument('--num_workers', type=int, default=0, help='data loader num workers')

@@ -158,7 +158,7 @@ class Model(nn.Module):
                 )
         # ===== 添加以下针对 Qwen 的代码 =====
         elif 'qwen' in configs.llm_model.lower():
-            from transformers import AutoModel, AutoTokenizer, AutoConfig, BitsAndBytesConfig
+            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
             import torch
             
             print(f"Loading Qwen model from {configs.llm_model}...")
@@ -175,7 +175,7 @@ class Model(nn.Module):
                 bnb_4bit_quant_type="nf4"
             )
         
-            self.llm_model = AutoModel.from_pretrained(
+            self.llm_model = AutoModelForCausalLM.from_pretrained(
                 configs.llm_model,
                 trust_remote_code=True,
                 torch_dtype=torch.bfloat16,
