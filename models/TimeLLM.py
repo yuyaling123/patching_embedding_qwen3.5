@@ -175,16 +175,22 @@ class Model(nn.Module):
                 bnb_4bit_quant_type="nf4"
             )
             
+            # 1. 在加载大模型前，强制进行垃圾回收并清空 PyTorch 的显存缓存池
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+            
+            # 2. 加载模型（关键修改：放弃 auto，强行指派给 cuda:0）
             self.llm_model = AutoModel.from_pretrained(
                 configs.llm_model,
                 trust_remote_code=True,
-                torch_dtype=torch.bfloat16,   # <--- 【关键修复】必须显式加上这行！
-                quantization_config=quantization_config, # 使用标准配置传入量化参数
-                attn_implementation="sdpa",              # 使用 PyTorch 原生加速，完美避开 flash-attn 编译报错
-                device_map="auto"
-                max_memory={0: "16GiB", "cpu": "40GiB"}, # <--- 【关键修复 2】强制锁死 GPU0 显存上限为 16G！
+                torch_dtype=torch.bfloat16,
+                quantization_config=quantization_config,
+                attn_implementation="sdpa",
+                device_map={"": "cuda:0"},    # <--- 【核心修改】不要用 "auto"，直接写死 cuda:0 杜绝分配碎片！
                 low_cpu_mem_usage=True
             )
+
             self.tokenizer = AutoTokenizer.from_pretrained(
                 configs.llm_model,
                 trust_remote_code=True
