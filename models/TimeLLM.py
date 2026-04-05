@@ -182,6 +182,8 @@ class Model(nn.Module):
                 quantization_config=quantization_config, # 使用标准配置传入量化参数
                 attn_implementation="sdpa",              # 使用 PyTorch 原生加速，完美避开 flash-attn 编译报错
                 device_map="auto"
+                max_memory={0: "16GiB", "cpu": "40GiB"}, # <--- 【关键修复 2】强制锁死 GPU0 显存上限为 16G！
+                low_cpu_mem_usage=True
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
                 configs.llm_model,
