@@ -178,6 +178,7 @@ class Model(nn.Module):
             self.llm_model = AutoModel.from_pretrained(
                 configs.llm_model,
                 trust_remote_code=True,
+                torch_dtype=torch.bfloat16,   # <--- 【关键修复】必须显式加上这行！
                 quantization_config=quantization_config, # 使用标准配置传入量化参数
                 attn_implementation="sdpa",              # 使用 PyTorch 原生加速，完美避开 flash-attn 编译报错
                 device_map="auto"

@@ -242,6 +242,10 @@ def main():
     parser.add_argument('--interactive', action='store_true', help='Enable interactive pause after each epoch')
     parser.add_argument('--causal_prompt_path', type=str, default=None, help='Path to causal prompt text file')
 
+    # 兼容 DeepSpeed 自动传入的参数
+    parser.add_argument('--local_rank', type=int, default=0, help='local rank for DeepSpeed')
+    parser.add_argument('--deepspeed', type=str, default='', help='DeepSpeed config file path')
+
     args = parser.parse_args()
     
     # Load Causal Prompt if provided
@@ -309,7 +313,7 @@ def main():
             print(f"【系统】正在初始化 Time-LLM 模型 (Backbone: {args.llm_model})...")
             if args.llm_model == 'GPT2' and os.path.exists('./gpt2'):
                 print(f"【系统】检测到本地 GPT2 模型文件夹，将优先从 ./gpt2 加载")
-            model = TimeLLM.Model(args).float()
+            model = TimeLLM.Model(args)
             print(f"【系统】模型初始化完成。")
         else:
             model = eval(args.model).Model(args).float()
