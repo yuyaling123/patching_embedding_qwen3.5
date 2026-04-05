@@ -174,40 +174,14 @@ class Model(nn.Module):
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4"
             )
-            
-            # 1. 强制清理历史碎片
-            import gc
-            import torch
-            gc.collect()
-            torch.cuda.empty_cache()
-            
-            from transformers import AutoModel, AutoTokenizer, AutoConfig, BitsAndBytesConfig
-            
-            print(f"Loading Qwen model from {configs.llm_model}...")
-            self.llm_config = AutoConfig.from_pretrained(
-                configs.llm_model, 
-                trust_remote_code=True
-            )
-            
-            # 【终极杀招：层数截断】告诉配置只加载指定的层数（从 64 层砍到 32 层）
-            self.llm_config.num_hidden_layers = configs.llm_layers
-            
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-            )
-            
+        
             self.llm_model = AutoModel.from_pretrained(
                 configs.llm_model,
-                config=self.llm_config,        # <--- 【关键】必须把修改后的 config 传进去！
                 trust_remote_code=True,
                 torch_dtype=torch.bfloat16,
                 quantization_config=quantization_config,
                 attn_implementation="sdpa",
-                device_map="auto",             # 因为砍了一半层数，显存现在极其宽裕，恢复 auto 即可
-                low_cpu_mem_usage=True
+                device_map="auto"
             )
 
             self.tokenizer = AutoTokenizer.from_pretrained(
