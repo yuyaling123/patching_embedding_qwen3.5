@@ -58,7 +58,7 @@ def run_command(command, cwd=PROJECT_ROOT):
     try:
         # result = subprocess.run(command, cwd=cwd, check=True) # Don't capture output, let it flow to stdout
         # Use Popen to stream output if needed, but run() is fine for blocking
-        subprocess.check_call(command, cwd=cwd, shell=True) # shell=True sometimes needed on Windows for path resolution
+        subprocess.run(command, cwd=cwd, check=True)# shell=True sometimes needed on Windows for path resolution
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {e}")
         sys.exit(1)
