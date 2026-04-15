@@ -8,9 +8,9 @@ set INPUT_VARS=86
 :: =================================================
 
 echo ========================================================
-echo Starting Time-LLM for EV Load Forecasting (Qwen3.5-9B Version)
+echo Starting Time-LLM for EV Load Forecasting (Qwen3.5-27B Version)
 echo Workspace: WORKSPACE/timellm_improving/patching_embedding
-echo Model Dir: ../local_models/Qwen/Qwen3.5-9B
+echo Model Dir: ../local_models/Qwen/Qwen3.5-27B
 echo --------------------------------------------------------
 
 D:\Anaconda3\envs\timellm\python.exe run_main.py ^
@@ -34,8 +34,8 @@ D:\Anaconda3\envs\timellm\python.exe run_main.py ^
   --target Station_10 ^
   --batch_size 1 ^
   --learning_rate 0.0001 ^
-  --llm_model ../local_models/Qwen3.5-9B ^
-  --llm_dim 4096 ^
+  --llm_model /mnt/workspace/local_models/Qwen3.5-27B ^
+  --llm_dim 5120 ^
   --llm_layers 32
 
 pause
