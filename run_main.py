@@ -240,7 +240,7 @@ def main():
     #parser.add_argument('--llm_model', type=str, default='GPT2', help='LLM model selection')
     parser.add_argument('--llm_model', type=str, default='Qwen/Qwen3.5-27B', help='LLM model path or name')
     #parser.add_argument('--llm_dim', type=int, default=768, help='LLM model dimension')
-    parser.add_argument('--llm_dim', type=int, default=5120, help='LLM model dimension (Qwen-9B is 4096)')
+    parser.add_argument('--llm_dim', type=int, default=5120, help='LLM model dimension (Qwen-27B is 5120)')
     #parser.add_argument('--llm_layers', type=int, default=6, help='number of LLM layers')
     parser.add_argument('--llm_layers', type=int, default=32, help='LLM model layers')
 
