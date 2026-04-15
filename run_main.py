@@ -238,9 +238,9 @@ def main():
     parser.add_argument('--stride', type=int, default=8, help='stride')
     parser.add_argument('--prompt_domain', type=int, default=0, help='used in prompt_bank')
     #parser.add_argument('--llm_model', type=str, default='GPT2', help='LLM model selection')
-    parser.add_argument('--llm_model', type=str, default='Qwen/Qwen3.5-9B', help='LLM model path or name')
+    parser.add_argument('--llm_model', type=str, default='Qwen/Qwen3.5-27B', help='LLM model path or name')
     #parser.add_argument('--llm_dim', type=int, default=768, help='LLM model dimension')
-    parser.add_argument('--llm_dim', type=int, default=4096, help='LLM model dimension (Qwen-9B is 4096)')
+    parser.add_argument('--llm_dim', type=int, default=5120, help='LLM model dimension (Qwen-9B is 4096)')
     #parser.add_argument('--llm_layers', type=int, default=6, help='number of LLM layers')
     parser.add_argument('--llm_layers', type=int, default=32, help='LLM model layers')
 
@@ -300,6 +300,8 @@ def main():
     elif args.llm_model == 'BERT':
         # BERT-base hidden size is 768
         args.llm_dim = 768
+    elif '27b' in args.llm_model.lower():
+        args.llm_dim = 5120
 
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(kwargs_handlers=[ddp_kwargs])

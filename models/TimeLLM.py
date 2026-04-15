@@ -170,7 +170,7 @@ class Model(nn.Module):
             # 【A10 单卡量化保命方案】: 修复了直接传 load_in_4bit 报错的问题，采用标准 Config
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_compute_dtype=torch.float16,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4"
             )
@@ -178,7 +178,7 @@ class Model(nn.Module):
             self.llm_model = AutoModelForCausalLM.from_pretrained(
                 configs.llm_model,
                 trust_remote_code=True,
-                torch_dtype=torch.bfloat16,
+                torch_dtype=torch.float16,
                 quantization_config=quantization_config,
                 attn_implementation="sdpa",
                 device_map="auto"
