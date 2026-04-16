@@ -186,7 +186,7 @@ class Model(nn.Module):
                 quantization_config=quantization_config,
                 torch_dtype=torch.float16,
                 attn_implementation="sdpa",
-                device_map="auto",
+                device_map={"": 0},                 # <--- 【硬核修复】：禁止 auto 瞎分配！强行锁死在 GPU 0 上
                 low_cpu_mem_usage=True
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
