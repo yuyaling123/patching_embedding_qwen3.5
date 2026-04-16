@@ -152,12 +152,14 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 【终极显存保护】：极限截断至 4 层，确保反向传播梯度图有充足的 16G 显存空间！
-            if configs.llm_layers > 4:
-                print(f"【⚠️系统干预】为彻底保障 V100 16GB 训练时不发生 OOM，已将层数强行截断至 4 层！")
-                configs.llm_layers = 4
+            # 【终极显存保护 1】：极限截断至 2 层，100% 确保反向传播梯度图有充足显存空间！
+            if configs.llm_layers > 2:
+                print(f"【⚠️系统干预】为彻底保障 V100 16GB 训练时不发生 OOM，已将层数极限截断至 2 层，并禁用 KV Cache！")
+                configs.llm_layers = 2
             
             self.llm_config.num_hidden_layers = configs.llm_layers
+            # 【终极显存保护 2】：强制关闭生成模式的 KV Cache，避免训练时无谓显存消耗！
+            self.llm_config.use_cache = False 
             
             gc.collect()
             torch.cuda.empty_cache()
@@ -339,8 +341,8 @@ class Model(nn.Module):
 
         x_main = x_main.permute(0, 2, 1).contiguous()
 
-        # 【核心显存优化】：大幅降低 Prompt 最大填充长度，避免无谓的 Token 补齐占用显存！
-        prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=256).input_ids
+        # 【终极显存保护 3】：进一步压缩 max_length 限制，避免由于变量数 (N=28) 带来的长序列矩阵乘法爆炸
+        prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=150).input_ids
         prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens.to(x_main.device))
 
         we = self.word_embeddings.to(x_main.dtype)
@@ -374,6 +376,10 @@ class Model(nn.Module):
         enc_out = self.reprogramming_layer(fused_tokens, source_embeddings, source_embeddings)
         
         llama_enc_out = torch.cat([prompt_embeddings, enc_out.to(prompt_embeddings.dtype)], dim=1)
+
+        # 清除前期的拼接缓存，为大模型前向传播让出极限空间
+        import torch
+        torch.cuda.empty_cache()
 
         try:
              dec_out = self.llm_model(inputs_embeds=llama_enc_out).last_hidden_state
