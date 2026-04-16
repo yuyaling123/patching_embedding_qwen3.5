@@ -176,8 +176,7 @@ class Model(nn.Module):
             
         # ===== Qwen 分支 (终极修复区) =====
         elif 'qwen' in configs.llm_model.lower():
-            # 注意：这里我们改用了 AutoModel，这能瞬间丢掉 1.55GB 的 LM Head 垃圾包袱！
-            from transformers import AutoModel, AutoTokenizer, AutoConfig, BitsAndBytesConfig
+            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
             import torch
             import gc
             
@@ -187,9 +186,9 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 使用外科手术级加载后，V100 可以轻松跑 14 层！
+            # V100 16G 显存，配合 32B AWQ 预量化模型，我们可以安全跑到 14 层！
             if configs.llm_layers > 14:
-                print(f"【⚠️系统干预】为保障 V100 16GB 不发生 OOM，已将层数从 {configs.llm_layers} 截断至 14 层！")
+                print(f"【⚠️系统干预】为保障 V100 16GB 不发生 OOM，已将层数截断至 14 层！")
                 configs.llm_layers = 14
             
             self.llm_config.num_hidden_layers = configs.llm_layers
@@ -197,35 +196,43 @@ class Model(nn.Module):
             gc.collect()
             torch.cuda.empty_cache()
             
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16, 
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4"
-            )
-            
             # 【终极防爆显存：精准白名单映射】
-            # 我们绝不再用 "auto" 或 {"": 0}，它们会把不需要的层也拖进显存。
-            # 这里构建精确的白名单，只把前 N 层拉进 GPU！硬盘上的其他层看都不会看一眼。
+            # 对于 AWQ 预量化模型，我们需要精确导入它所需的基础架构部件
             custom_device_map = {
-                "embed_tokens": 0,
-                "norm": 0,
                 "model.embed_tokens": 0,
-                "model.norm": 0
+                "model.norm": 0,
+                "lm_head": 0
             }
             for i in range(configs.llm_layers):
-                custom_device_map[f"layers.{i}"] = 0
                 custom_device_map[f"model.layers.{i}"] = 0
             
-            self.llm_model = AutoModel.from_pretrained(
+            # 判断是否是预量化模型 (包含 AWQ, GPTQ 或 Int4 关键字)
+            is_pre_quantized = any(keyword in configs.llm_model.lower() for keyword in ['awq', 'gptq', 'int4'])
+            
+            load_kwargs = {
+                "config": self.llm_config,             
+                "trust_remote_code": True,
+                "torch_dtype": torch.float16,  # V100 必须用 float16
+                "attn_implementation": "sdpa",
+                "device_map": custom_device_map,
+                "low_cpu_mem_usage": True
+            }
+
+            if not is_pre_quantized:
+                # 只有非量化模型才需要动态量化（AWQ不需要）
+                from transformers import BitsAndBytesConfig
+                load_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16, 
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_quant_type="nf4"
+                )
+            else:
+                print("【系统】检测到 AWQ 预量化模型，跳过 BitsAndBytes 动态量化，执行原生极速加载。")
+            
+            self.llm_model = AutoModelForCausalLM.from_pretrained(
                 configs.llm_model,
-                config=self.llm_config,             
-                trust_remote_code=True,
-                quantization_config=quantization_config,
-                torch_dtype=torch.float16,
-                attn_implementation="sdpa",
-                device_map=custom_device_map,     # <--- 应用精确白名单
-                low_cpu_mem_usage=True
+                **load_kwargs
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
                 configs.llm_model,

@@ -47,7 +47,7 @@ BASE_ARGS = [
     '--llm_layers', '14', # Maintained at 14 (防止 CUDA Out of Memory)
     '--train_epochs', '5', # Maintained at 10
     '--patience', '3',     # Maintained at 3
-    '--llm_model', '/mnt/workspace/local_models/Qwen3.5-27B', 
+    '--llm_model', '/mnt/workspace/local_models/Qwen2.5-32B-Instruct-AWQ', 
     '--llm_dim', '5120',
     '--itr', '1',
     '--model_comment', 'Cluster_Training_Run' # Added required argument
