@@ -72,6 +72,7 @@ def vali(model, vali_loader, criterion, args, accelerator):
     return total_loss
 
 def test(model, test_loader, args, accelerator):
+    print(f"【系统】开始进行测试集预测 ({datetime.datetime.now().strftime('%H:%M:%S')})...")
     preds = []
     trues = []
     
@@ -83,11 +84,9 @@ def test(model, test_loader, args, accelerator):
             batch_x_mark = batch_x_mark.float().to(accelerator.device)
             batch_y_mark = batch_y_mark.float().to(accelerator.device)
 
-            # Decoder input
-            dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float().to(accelerator.device)
+            dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
             dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(accelerator.device)
-
-            # Encoder - Decoder 推理
+            
             if args.use_amp:
                 with torch.cuda.amp.autocast():
                     if args.output_attention:
@@ -100,10 +99,17 @@ def test(model, test_loader, args, accelerator):
                 else:
                     outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
+            # 维度裁剪逻辑: M模式下保留所有列
             f_dim = -1 if args.features == 'MS' else 0
+            
             outputs = outputs[:, -args.pred_len:, f_dim:]
             batch_y = batch_y[:, -args.pred_len:, f_dim:].to(accelerator.device)
-
+            
+            # --- Late Fusion: Remove covariate dimensions from batch_y ---
+            if getattr(args, 'cov_dim', 0) > 0 and args.features == 'M':
+                batch_y = batch_y[:, :, args.cov_dim:]
+            # -----------------------------------------------------------
+            
             outputs = outputs.detach().cpu().numpy()
             batch_y = batch_y.detach().cpu().numpy()
 
@@ -112,81 +118,54 @@ def test(model, test_loader, args, accelerator):
 
     preds = np.array(preds)
     trues = np.array(trues)
+    
+    # 重新调整形状 (Samples, Pred_Len, Features)
     preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
     trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-    
-    target_dim = preds.shape[-1]
-    
-    print(f"【测试结果】预测矩阵形状: {preds.shape} (预期目标特征数应为 {args.c_out})")
-    print(f"【测试结果】真实矩阵形状: {trues.shape}")
 
-    # =========================================================================
-    # 第一步：计算标准化 (Standardized) 指标 (学术论文对比标准)
-    # =========================================================================
-    preds_std = preds[:, :, :target_dim]
-    trues_std = trues[:, :, :target_dim]
-    std_mae, std_mse, std_rmse, std_mape, std_mspe, std_r2 = metric(preds_std, trues_std)
+    print(f"【测试结果】预测矩阵形状: {preds.shape} (预期第三维应为 {args.c_out})")
 
-    # =========================================================================
-    # 第二步：逆归一化 (Inverse Transform)
-    # =========================================================================
-    print("【系统】正在生成真实刻度结果 (Inverse Transform)...")
-    
-    if test_loader.dataset.scale:
-        # 1. 独立处理预测值 preds
-        pad_dim_p = args.enc_in - preds.shape[-1]
-        if pad_dim_p > 0:
-            pad_zeros_p = np.zeros((preds.shape[0], preds.shape[1], pad_dim_p))
-            preds_padded = np.concatenate([preds, pad_zeros_p], axis=-1)
-        else:
-            preds_padded = preds
-            
-        # 2. 独立处理真实值 trues
-        pad_dim_t = args.enc_in - trues.shape[-1]
-        if pad_dim_t > 0:
-            pad_zeros_t = np.zeros((trues.shape[0], trues.shape[1], pad_dim_t))
-            trues_padded = np.concatenate([trues, pad_zeros_t], axis=-1)
-        else:
-            trues_padded = trues
-            
-        # 3. 将 3D 转为 sklearn 需要的 2D 数组
-        preds_padded_2d = preds_padded.reshape(-1, preds_padded.shape[-1])
-        trues_padded_2d = trues_padded.reshape(-1, trues_padded.shape[-1])
-        
-        # 4. 执行逆归一化
-        preds_real_2d = test_loader.dataset.inverse_transform(preds_padded_2d)
-        trues_real_2d = test_loader.dataset.inverse_transform(trues_padded_2d)
-        
-        # 5. 从 2D 还原回 3D 形状
-        preds_real = preds_real_2d.reshape(preds_padded.shape)
-        trues_real = trues_real_2d.reshape(trues_padded.shape)
-    else:
-        preds_real = preds
-        trues_real = trues
-
-    # 对齐切片区：统一切除多余的协变量维度
-    preds_real = preds_real[:, :, :target_dim]
-    trues_real = trues_real[:, :, :target_dim]
-
-    # =========================================================================
-    # 第三步：计算真实刻度 (Real Scale) 指标
-    # =========================================================================
-    real_mae, real_mse, real_rmse, real_mape, real_mspe, real_r2 = metric(preds_real, trues_real)
-    
-    print("------------------------------------")
-    print(f"【系统】学术论文标准 (标准化)   -> MSE:{std_mse:.4f}, MAE:{std_mae:.4f}")
-    print(f"【系统】业务评估指标 (真实刻度) -> MSE:{real_mse:.4f}, MAE:{real_mae:.4f}, R2:{real_r2:.4f}")
-    print("------------------------------------")
-    
-    # 保存真实预测结果供后续画图使用
-    folder_path = './test_results/' + args.model_id + '/'
+    folder_path = './results/' + args.model_id + '/'
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
-    np.save(folder_path + 'pred_original.npy', preds_real)
-    np.save(folder_path + 'true_original.npy', trues_real)
 
-    # 最终返回值：返回标准的 MAE/MSE 供原代码其它部分可能的使用，同时附带真实的 R2
-    return std_mae, std_mse, std_rmse, std_mape, std_mspe, real_r2
+    # 1. 计算指标 (基于标准化数据，与论文一致)
+    mae, mse, rmse, mape, mspe,r2, cor2 = metric(preds, trues)
+    print('整体测试集指标(标准化) -> mse:{}, mae:{}, r2:{}, cor2:{}'.format(mse, mae, r2, cor2))
+    
+    # 2. 保存标准化结果 (pred.npy)
+    np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe, r2, cor2]))
+    np.save(folder_path + 'pred.npy', preds)
+    np.save(folder_path + 'true.npy', trues)
+    
+    # 3. 生成并保存真实值结果 (pred_original.npy)
+    if test_loader.dataset.scale:
+         print(f"【系统】正在生成真实刻度结果 (Inverse Transform)...")
+         shape_preds = preds.shape
+         
+         preds_2d = preds.reshape(-1, preds.shape[-1])
+         trues_2d = trues.reshape(-1, trues.shape[-1])
+         
+         # --- Late Fusion: Pad dummy covariates for inverse_transform if needed ---
+         if getattr(args, 'cov_dim', 0) > 0 and args.features == 'M':
+             # Pad zeros to the left to match original feature dimension (e.g. 55)
+             dummy_covs_pred = np.zeros((preds_2d.shape[0], args.cov_dim))
+             dummy_covs_true = np.zeros((trues_2d.shape[0], args.cov_dim))
+             preds_2d = np.concatenate([dummy_covs_pred, preds_2d], axis=1)
+             trues_2d = np.concatenate([dummy_covs_true, trues_2d], axis=1)
+             
+             preds_inv = test_loader.dataset.inverse_transform(preds_2d)[:, args.cov_dim:].reshape(shape_preds)
+             trues_inv = test_loader.dataset.inverse_transform(trues_2d)[:, args.cov_dim:].reshape(shape_preds)
+         else:
+             preds_inv = test_loader.dataset.inverse_transform(preds_2d).reshape(shape_preds)
+             trues_inv = test_loader.dataset.inverse_transform(trues_2d).reshape(shape_preds)
+         # --------------------------------------------------------------------------
+         
+         np.save(folder_path + 'pred_original.npy', preds_inv)
+         np.save(folder_path + 'true_original.npy', trues_inv)
+         print(f"【系统】真实刻度结果已保存至 pred_original.npy")
+
+    return mse, mae
 
 def main():
     parser = argparse.ArgumentParser(description='Time-LLM for EV Load Forecasting')
@@ -513,7 +492,7 @@ def main():
             model.load_state_dict(torch.load(best_model_path)['model_state_dict'])
 
             print("------------------------------------")
-            test_results = test(model, test_loader, args, accelerator)
+            mse, mae = test(model, test_loader, args, accelerator)
             print("------------------------------------")
 
     accelerator.wait_for_everyone()
