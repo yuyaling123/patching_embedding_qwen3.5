@@ -44,11 +44,11 @@ BASE_ARGS = [
     '--d_ff', '256',   # Increased from 128 to 256
     '--batch_size', '1', # Decreased to 1 to avoid OOM
     '--learning_rate', '0.0001', # Reduced from 0.0005 to 0.0001 for finer convergence
-    '--llm_layers', '14', # Maintained at 14 (防止 CUDA Out of Memory)
+    '--llm_layers', '24', # Maintained at 24 (防止 CUDA Out of Memory)
     '--train_epochs', '5', # Maintained at 10
     '--patience', '3',     # Maintained at 3
-    '--llm_model', '/mnt/workspace/local_models/Qwen2.5-32B-Instruct-AWQ', 
-    '--llm_dim', '5120',
+    '--llm_model', '/mnt/workspace/local_models/Qwen3.5-9B', 
+    '--llm_dim', '4096',
     '--itr', '1',
     '--model_comment', 'Cluster_Training_Run' # Added required argument
 ]

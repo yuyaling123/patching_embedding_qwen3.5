@@ -34,8 +34,8 @@ D:\Anaconda3\envs\timellm\python.exe run_main.py ^
   --target Station_10 ^
   --batch_size 1 ^
   --learning_rate 0.0001 ^
-  --llm_model /mnt/workspace/local_models/Qwen3.5-27B ^
-  --llm_dim 5120 ^
-  --llm_layers 14
+  --llm_model /mnt/workspace/local_models/Qwen3.5-9B ^
+  --llm_dim 4096 ^
+  --llm_layers 24
 
 pause
