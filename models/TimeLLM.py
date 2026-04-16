@@ -247,7 +247,12 @@ class Model(nn.Module):
         ) if self.cov_dim > 0 else None
 
         self.word_embeddings = self.llm_model.get_input_embeddings().weight
-        self.vocab_size = self.word_embeddings.shape[0]
+        
+        # 【终极显存保护 4】：大幅缩减映射词表，斩断超 3GB 的隐藏显存杀手！
+        # Qwen 的词表高达 151936，如果全部映射会导致 float32 权重拷贝和 Adam 优化器状态极其庞大！
+        # 我们截取前 20000 个高频词汇（足够覆盖常用字、数字），完美腾出用于计算 Attention 的致命空间！
+        self.vocab_size = min(20000, self.word_embeddings.shape[0])
+        
         self.num_tokens = 1000
         self.mapping_layer = nn.Linear(self.vocab_size, self.num_tokens)
 
@@ -350,7 +355,8 @@ class Model(nn.Module):
         prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=150).input_ids
         prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens.to(x_main.device))
 
-        we = self.word_embeddings.to(x_main.dtype)
+        # 【终极显存保护 4 配套修改】：只提取截取后的前 20000 个权重并做 Float32 复制
+        we = self.word_embeddings[:self.vocab_size].to(x_main.dtype)
         source_embeddings = self.mapping_layer(we.permute(1, 0)).permute(1, 0)
         
         main_tokens, n_main = self.patch_embedding(x_main)
