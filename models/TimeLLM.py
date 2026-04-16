@@ -1,8 +1,6 @@
 from math import sqrt
-
 import torch
 import torch.nn as nn
-
 from transformers import LlamaConfig, LlamaModel, LlamaTokenizer, GPT2Config, GPT2Model, GPT2Tokenizer, BertConfig, \
     BertModel, BertTokenizer
 from layers.Embed import PatchEmbedding
@@ -10,7 +8,6 @@ import transformers
 from layers.StandardNorm import Normalize
 
 transformers.logging.set_verbosity_error()
-
 
 class FlattenHead(nn.Module):
     def __init__(self, n_vars, nf, target_window, head_dropout=0):
@@ -27,9 +24,7 @@ class FlattenHead(nn.Module):
         x = self.dropout(x)
         return x
 
-
 class Model(nn.Module):
-
     def __init__(self, configs):
         super(Model, self).__init__()
         self.task_name = configs.task_name
@@ -47,48 +42,40 @@ class Model(nn.Module):
         # ---------------------------------------------------
 
         if configs.llm_model == 'LLAMA':
-            # self.llama_config = LlamaConfig.from_pretrained('/mnt/alps/modelhub/pretrained_model/LLaMA/7B_hf/')
             self.llama_config = LlamaConfig.from_pretrained('huggyllama/llama-7b')
             self.llama_config.num_hidden_layers = configs.llm_layers
             self.llama_config.output_attentions = True
             self.llama_config.output_hidden_states = True
             try:
                 self.llm_model = LlamaModel.from_pretrained(
-                    # "/mnt/alps/modelhub/pretrained_model/LLaMA/7B_hf/",
                     'huggyllama/llama-7b',
                     trust_remote_code=True,
                     local_files_only=True,
                     config=self.llama_config,
-                    # load_in_4bit=True
                 )
-            except EnvironmentError:  # downloads model from HF is not already done
+            except EnvironmentError:
                 print("Local model files not found. Attempting to download...")
                 self.llm_model = LlamaModel.from_pretrained(
-                    # "/mnt/alps/modelhub/pretrained_model/LLaMA/7B_hf/",
                     'huggyllama/llama-7b',
                     trust_remote_code=True,
                     local_files_only=False,
                     config=self.llama_config,
-                    # load_in_4bit=True
                 )
             try:
                 self.tokenizer = LlamaTokenizer.from_pretrained(
-                    # "/mnt/alps/modelhub/pretrained_model/LLaMA/7B_hf/tokenizer.model",
                     'huggyllama/llama-7b',
                     trust_remote_code=True,
                     local_files_only=True
                 )
-            except EnvironmentError:  # downloads the tokenizer from HF if not already done
+            except EnvironmentError:
                 print("Local tokenizer files not found. Atempting to download them..")
                 self.tokenizer = LlamaTokenizer.from_pretrained(
-                    # "/mnt/alps/modelhub/pretrained_model/LLaMA/7B_hf/tokenizer.model",
                     'huggyllama/llama-7b',
                     trust_remote_code=True,
                     local_files_only=False
                 )
         elif configs.llm_model == 'GPT2':
             self.gpt2_config = GPT2Config.from_pretrained('./gpt2')
-
             self.gpt2_config.num_hidden_layers = configs.llm_layers
             self.gpt2_config.output_attentions = True
             self.gpt2_config.output_hidden_states = True
@@ -99,7 +86,7 @@ class Model(nn.Module):
                     local_files_only=True,
                     config=self.gpt2_config,
                 )
-            except EnvironmentError:  # downloads model from HF is not already done
+            except EnvironmentError:
                 print("Local model files not found. Attempting to download...")
                 self.llm_model = GPT2Model.from_pretrained(
                     './gpt2',
@@ -107,23 +94,21 @@ class Model(nn.Module):
                     local_files_only=False,
                     config=self.gpt2_config,
                 )
-
             try:
                 self.tokenizer = GPT2Tokenizer.from_pretrained(
                     './gpt2',
                     trust_remote_code=True,
                     local_files_only=True
                 )
-            except EnvironmentError:  # downloads the tokenizer from HF if not already done
+            except EnvironmentError:
                 print("Local tokenizer files not found. Atempting to download them..")
                 self.tokenizer = GPT2Tokenizer.from_pretrained(
                     './gpt2',
                     trust_remote_code=True,
                     local_files_only=False
                 )
-        elif configs.llm_model == 'GPT2':
+        elif configs.llm_model == 'BERT':
             self.bert_config = BertConfig.from_pretrained('google-bert/bert-base-uncased')
-
             self.bert_config.num_hidden_layers = configs.llm_layers
             self.bert_config.output_attentions = True
             self.bert_config.output_hidden_states = True
@@ -134,7 +119,7 @@ class Model(nn.Module):
                     local_files_only=True,
                     config=self.bert_config,
                 )
-            except EnvironmentError:  # downloads model from HF is not already done
+            except EnvironmentError:
                 print("Local model files not found. Attempting to download...")
                 self.llm_model = BertModel.from_pretrained(
                     'google-bert/bert-base-uncased',
@@ -142,39 +127,19 @@ class Model(nn.Module):
                     local_files_only=False,
                     config=self.bert_config,
                 )
-
             try:
                 self.tokenizer = BertTokenizer.from_pretrained(
                     'google-bert/bert-base-uncased',
                     trust_remote_code=True,
                     local_files_only=True
                 )
-            except EnvironmentError:  # downloads the tokenizer from HF if not already done
+            except EnvironmentError:
                 print("Local tokenizer files not found. Atempting to download them..")
                 self.tokenizer = BertTokenizer.from_pretrained(
                     'google-bert/bert-base-uncased',
                     trust_remote_code=True,
                     local_files_only=False
                 )
-        # ===== Qwen 分支 =====
-        elif configs.llm_model == 'LLAMA':
-            self.llama_config = LlamaConfig.from_pretrained('/mnt/alps/modelhub/PretrainModel/llama-7b-hf')
-            self.llama_config.num_hidden_layers = configs.llm_layers
-            self.llama_config.output_attentions = True
-            self.llama_config.output_hidden_states = True
-            self.llm_model = LlamaModel.from_pretrained(
-                '/mnt/alps/modelhub/PretrainModel/llama-7b-hf',
-                trust_remote_code=True,
-                local_files_only=True,
-                config=self.llama_config,
-            )
-            self.tokenizer = LlamaTokenizer.from_pretrained(
-                '/mnt/alps/modelhub/PretrainModel/llama-7b-hf',
-                trust_remote_code=True,
-                local_files_only=True
-            )
-            
-        # ===== Qwen 分支 (终极修复区) =====
         # ===== Qwen 分支 (适配 V100 16G + 9B模型) =====
         elif 'qwen' in configs.llm_model.lower():
             from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
@@ -187,7 +152,6 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # V100 16G 显存跑 9B 模型，最多可安全跑到 24 层
             if configs.llm_layers > 24:
                 print(f"【⚠️系统干预】为保障 V100 16GB 不发生 OOM，已将层数截断至 24 层！")
                 configs.llm_layers = 24
@@ -197,7 +161,6 @@ class Model(nn.Module):
             gc.collect()
             torch.cuda.empty_cache()
             
-            # 【精准白名单映射】保证没有任何多余的层被读进显存
             custom_device_map = {
                 "model.embed_tokens": 0,
                 "model.norm": 0,
@@ -206,7 +169,6 @@ class Model(nn.Module):
             for i in range(configs.llm_layers):
                 custom_device_map[f"model.layers.{i}"] = 0
             
-            # V100 专属：必须使用 float16，BitsAndBytes 动态量化完美支持 V100
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16, 
@@ -229,16 +191,13 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 【修复报错的核心位置】
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             self.llm_model.config.pad_token_id = self.tokenizer.pad_token_id
             
-            # 直接赋值为外面传进来的维度(4096)，不要再去 config 里读取 hidden_size
             self.llm_dim = configs.llm_dim
             self.d_llm = configs.llm_dim
-        # ====================================
-        
+            
         else:
             raise Exception('LLM model is not defined')
 
@@ -257,24 +216,26 @@ class Model(nn.Module):
         else:
             self.description = 'The Electricity Transformer Temperature (ETT) is a crucial indicator in the electric power long-term deployment.'
         
-        # New: Causal Prompt Support
         self.causal_prompt = getattr(configs, 'causal_prompt', '')
-
         self.dropout = nn.Dropout(configs.dropout)
 
+        # 提取 padding，加入容错：若未配置则默认为 0
+        padding_val = getattr(configs, 'padding', 0)
+
+        # 【核心修复 1】: 这里原先误用了不存在的 self.d_model，已修正为 configs.d_model
         self.patch_embedding = PatchEmbedding(
-            self.d_model, 
+            configs.d_model, 
             self.patch_len, 
             self.stride, 
-            configs.padding,  # 从 configs 获取 padding
-            configs.dropout   # 从 configs 获取 dropout
+            padding_val,  
+            configs.dropout   
         )
         
         self.patch_embedding_main = PatchEmbedding(
-            configs.d_model, self.patch_len, self.stride, configs.padding,configs.dropout)
+            configs.d_model, self.patch_len, self.stride, padding_val, configs.dropout)
         
         self.patch_embedding_cov = PatchEmbedding(
-            configs.d_model, self.patch_len, self.stride, configs.padding,configs.dropout) if self.cov_dim > 0 else None
+            configs.d_model, self.patch_len, self.stride, padding_val, configs.dropout) if self.cov_dim > 0 else None
 
         self.word_embeddings = self.llm_model.get_input_embeddings().weight
         self.vocab_size = self.word_embeddings.shape[0]
@@ -285,14 +246,12 @@ class Model(nn.Module):
 
         self.patch_nums = int((configs.seq_len - self.patch_len) / self.stride + 2)
         
-        # --- Dual-Patch Fusion: Covariate fusion layer ---
         self.cov_fusion = nn.Sequential(
             nn.Linear(2 * configs.d_model, configs.d_model),
             nn.GELU(),
             nn.Linear(configs.d_model, configs.d_model)
         )
         
-        # --- Attention Pooling for Covariates ---
         self.cov_attn_pool = nn.Sequential(
             nn.Linear(configs.d_model, 1)
         ) if self.cov_dim > 0 else None
@@ -317,16 +276,13 @@ class Model(nn.Module):
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         B, T, N_total = x_enc.shape
 
-        # --- Dual-Patch Fusion: Split covariates from main sequence ---
         if hasattr(self, 'cov_dim') and self.cov_dim > 0:
             x_cov = x_enc[:, :, :self.cov_dim].clone()
             x_main = x_enc[:, :, self.cov_dim:].clone()
         else:
             x_cov = None
             x_main = x_enc.clone()
-        # --------------------------------------------------------------
 
-        # Normalize main and covariate sequences separately
         if hasattr(self, 'normalize_main'):
             x_main = self.normalize_main(x_main, 'norm')
         else:
@@ -335,7 +291,6 @@ class Model(nn.Module):
         if hasattr(self, 'cov_dim') and self.cov_dim > 0 and hasattr(self, 'normalize_cov'):
             x_cov = self.normalize_cov(x_cov, 'norm')
 
-        # 统计特征基于主序列计算
         B_m, T_m, N_m = x_main.size()
         x_main_flat = x_main.permute(0, 2, 1).contiguous().reshape(B_m * N_m, T_m, 1)
 
@@ -348,11 +303,9 @@ class Model(nn.Module):
         else:
             lags = self.calc_lags(x_main_flat)
             
-        # 【核心安全防御】：如果 lags 返回的是未解包的 Tuple，强制提取 indices
         if isinstance(lags, tuple):
             lags = lags[1]
             
-        # 【核心修复】：将 Tensor 提前转换为 Python 列表避免 ValueError
         lags_list = lags.detach().cpu().numpy().tolist()
         trends = x_main_flat.diff(dim=1).sum(dim=1)
 
@@ -363,7 +316,6 @@ class Model(nn.Module):
             max_values_str = str(int(max_values[b]))
             median_values_str = str(int(medians[b]))
             
-            # 使用已转换的列表构建周期性滞后项字符串
             lags_values_str = ', '.join(map(str, lags_list))
             
             prompt_content = (
@@ -388,14 +340,11 @@ class Model(nn.Module):
         prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=950).input_ids
         prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens.to(x_main.device))
 
-        # 【核心修复 1】: 将词表权重转换为 Float32 以匹配线性层
         we = self.word_embeddings.to(x_main.dtype)
         source_embeddings = self.mapping_layer(we.permute(1, 0)).permute(1, 0)
         
-        # 【核心修复 2】: patch_embedding 使用原生数据类型运行
         main_tokens, n_main = self.patch_embedding(x_main)
 
-        # --- 恢复您的 Dual-Patch Fusion Logic ---
         if hasattr(self, 'cov_dim') and self.cov_dim > 0:
             x_cov = x_cov.permute(0, 2, 1).contiguous()
             cov_tokens, n_cov = self.patch_embedding_cov(x_cov)
@@ -421,7 +370,6 @@ class Model(nn.Module):
             
         enc_out = self.reprogramming_layer(fused_tokens, source_embeddings, source_embeddings)
         
-        # 【核心修复 3】: 将 enc_out 转换回 LLM 数据类型 (Half/4-bit compute)
         llama_enc_out = torch.cat([prompt_embeddings, enc_out.to(prompt_embeddings.dtype)], dim=1)
 
         try:
@@ -433,8 +381,8 @@ class Model(nn.Module):
         dec_out = torch.reshape(dec_out, (-1, n_vars, dec_out.shape[-2], dec_out.shape[-1]))
         dec_out = dec_out.permute(0, 1, 3, 2).contiguous()
 
-        # 【核心修复 4】: 转换回 Float32 以匹配 output_projection
-        dec_out = self.output_projection(dec_out[:, :, :, -n_main:].to(x_main.dtype))
+        # 【核心修复 2】: 原先这里误写为了 -n_main:，应该还原成取最后一个维度的时间 Patch 数量
+        dec_out = self.output_projection(dec_out[:, :, :, -self.patch_nums:].to(x_main.dtype))
         dec_out = dec_out.permute(0, 2, 1).contiguous()
 
         if hasattr(self, 'normalize_main'):
@@ -452,7 +400,6 @@ class Model(nn.Module):
         mean_value = torch.mean(corr, dim=1)
         _, lags = torch.topk(mean_value, self.top_k, dim=-1)
         return lags
-
 
 class ReprogrammingLayer(nn.Module):
     def __init__(self, d_model, n_heads, d_keys=None, d_llm=None, attention_dropout=0.1):
