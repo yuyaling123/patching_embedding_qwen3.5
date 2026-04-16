@@ -142,7 +142,8 @@ class Model(nn.Module):
                 )
         # ===== Qwen 分支 (适配 V100 16G + 9B模型) =====
         elif 'qwen' in configs.llm_model.lower():
-            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
+            # 【神级改动】：将 AutoModelForCausalLM 替换为 AutoModel，彻底丢弃占用 2GiB 显存的文本生成词表头 (lm_head)
+            from transformers import AutoModel, AutoTokenizer, AutoConfig, BitsAndBytesConfig
             import gc
             
             print(f"Loading Qwen model from {configs.llm_model}...")
@@ -163,12 +164,16 @@ class Model(nn.Module):
             gc.collect()
             torch.cuda.empty_cache()
             
+            # 【智能映射】：兼容丢掉 CausalLM 后的模块名称变化
             custom_device_map = {
+                "embed_tokens": 0,
                 "model.embed_tokens": 0,
+                "norm": 0,
                 "model.norm": 0,
                 "lm_head": 0
             }
             for i in range(configs.llm_layers):
+                custom_device_map[f"layers.{i}"] = 0
                 custom_device_map[f"model.layers.{i}"] = 0
             
             quantization_config = BitsAndBytesConfig(
@@ -178,7 +183,8 @@ class Model(nn.Module):
                 bnb_4bit_quant_type="nf4"
             )
             
-            self.llm_model = AutoModelForCausalLM.from_pretrained(
+            # 【生效改动】：此处使用 AutoModel 载入，直接规避了 2.10 GiB 的致命 allocation
+            self.llm_model = AutoModel.from_pretrained(
                 configs.llm_model,
                 config=self.llm_config,             
                 trust_remote_code=True,
