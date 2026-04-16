@@ -167,24 +167,26 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 【修复重点 1：授权 CPU 卸载】
+            # 【截断核心 1】：强行修改 Config，只保留用户指定的层数（例如 14 层）
+            self.llm_config.num_hidden_layers = configs.llm_layers
+            
+            # 纯净的 4-bit 量化，专供 V100
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,  # V100 保持 float16
+                bnb_4bit_compute_dtype=torch.float16, 
                 bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                llm_int8_enable_fp32_cpu_offload=True  # <--- 新增这行！允许装不下的部分流向普通内存
+                bnb_4bit_quant_type="nf4"
             )
             
-            # 【修复重点 2：划定显存红线】
+            # 【截断核心 2】：必须把修改后的 config 传进去！
             self.llm_model = AutoModelForCausalLM.from_pretrained(
                 configs.llm_model,
+                config=self.llm_config,             # <--- 必须加上这一行才能真正截断
                 trust_remote_code=True,
                 quantization_config=quantization_config,
                 torch_dtype=torch.float16,
                 attn_implementation="sdpa",
                 device_map="auto",
-                max_memory={0: "14GiB", "cpu": "60GiB"}, # <--- 新增这行！限制 GPU 最多用 14G(留一点给计算)，剩下的全丢给 CPU
                 low_cpu_mem_usage=True
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
