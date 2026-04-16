@@ -334,14 +334,18 @@ class Model(nn.Module):
         min_values = torch.min(x_main_flat, dim=1)[0]
         max_values = torch.max(x_main_flat, dim=1)[0]
         medians = torch.median(x_main_flat, dim=1).values
+        
         if hasattr(self, 'calcute_lags'):
             lags = self.calcute_lags(x_main_flat)
         else:
             lags = self.calc_lags(x_main_flat)
             
-        # 【核心安全防御】：如果 lags 返回的是未解包的 Tuple (比如包含了 values 和 indices)，强制提取 indices
+        # 【核心安全防御】：如果 lags 返回的是未解包的 Tuple，强制提取 indices
         if isinstance(lags, tuple):
             lags = lags[1]
+            
+        # 将 Tensor 提前转换为 Python 列表避免 ValueError
+        lags_list = lags.detach().cpu().numpy().tolist()
         trends = x_main_flat.diff(dim=1).sum(dim=1)
 
         prompt = []
@@ -349,7 +353,9 @@ class Model(nn.Module):
             min_values_str = str(int(min_values[b]))
             max_values_str = str(int(max_values[b]))
             median_values_str = str(int(medians[b]))
-            lags_values_str = ', '.join([str(int(l)) for l in lags])
+            
+            # 修复位置：使用已转换的列表
+            lags_values_str = ', '.join(map(str, lags_list))
             
             prompt_content = (
                 f"<|start_prompt|>Dataset description: {self.description}"
@@ -370,14 +376,14 @@ class Model(nn.Module):
 
         x_main = x_main.permute(0, 2, 1).contiguous()
 
-        prompt = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=950).input_ids
-        prompt_embeddings = self.llm_model.get_input_embeddings()(prompt.to(x_main.device))  # (batch, prompt_token, dim)
-        
-        # 【核心修复 1】: 将大模型的词表权重 (Half) 转换为 Float32 以匹配 mapping_layer
+        prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=950).input_ids
+        prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens.to(x_main.device))
+
+        # 【核心修复 1】: 将词表权重转换为 Float32
         we = self.word_embeddings.to(x_main.dtype)
         source_embeddings = self.mapping_layer(we.permute(1, 0)).permute(1, 0)
         
-        # 【核心修复 2】: patch_embedding 使用原生 Float32 运行，不要强转 float16
+        # 【核心修复 2】: patch_embedding 使用原生数据类型
         main_tokens, n_main = self.patch_embedding(x_main)
 
         # --- 恢复您的 Dual-Patch Fusion Logic ---
@@ -386,19 +392,19 @@ class Model(nn.Module):
             cov_tokens, n_cov = self.patch_embedding_cov(x_cov)
             
             D = main_tokens.shape[-1]
-            main_tokens_reshaped = main_tokens.reshape(B, self.main_dim, self.patch_nums, D)
-            cov_tokens_reshaped = cov_tokens.reshape(B, self.cov_dim, self.patch_nums, D)
+            main_tokens_reshaped = main_tokens.reshape(B, self.main_dim, -1, D)
+            cov_tokens_reshaped = cov_tokens.reshape(B, self.cov_dim, -1, D)
             
-            attn_score = self.cov_attn_pool(cov_tokens_reshaped)         # [B, N_cov, P, 1]
+            attn_score = self.cov_attn_pool(cov_tokens_reshaped)
             attn_weight = torch.softmax(attn_score, dim=1)
-            cov_context = (cov_tokens_reshaped * attn_weight).sum(dim=1) # [B, P, D]
+            cov_context = (cov_tokens_reshaped * attn_weight).sum(dim=1)
             
             cov_context_expand = cov_context.unsqueeze(1).expand(-1, self.main_dim, -1, -1)
             
             fused_tokens = torch.cat([main_tokens_reshaped, cov_context_expand], dim=-1)
             fused_tokens = self.cov_fusion(fused_tokens)
             
-            fused_tokens = fused_tokens.reshape(B * self.main_dim, self.patch_nums, D)
+            fused_tokens = fused_tokens.reshape(B * self.main_dim, -1, D)
             n_vars = self.main_dim
         else:
             fused_tokens = main_tokens
@@ -406,26 +412,20 @@ class Model(nn.Module):
             
         enc_out = self.reprogramming_layer(fused_tokens, source_embeddings, source_embeddings)
         
-        # 【核心修复 3】: 将 enc_out 转换回 Float16 以匹配大模型的输入规范
+        # 【核心修复 3】: 将 enc_out 转换回 LLM 数据类型
         llama_enc_out = torch.cat([prompt_embeddings, enc_out.to(prompt_embeddings.dtype)], dim=1)
 
         try:
-            if 'qwen' in self.llm_model.config._name_or_path.lower():
-                 dec_out = self.llm_model(inputs_embeds=llama_enc_out).last_hidden_state
-            else:
-                 dec_out = self.llm_model(inputs_embeds=llama_enc_out).last_hidden_state
+             dec_out = self.llm_model(inputs_embeds=llama_enc_out).last_hidden_state
         except AttributeError:
-             # 有些 CausalLM 返回对象结构不同，退回到直接获取序列
              dec_out = self.llm_model(inputs_embeds=llama_enc_out)[0]
 
         dec_out = dec_out[:, :, :self.d_ff]
-
-        dec_out = torch.reshape(
-            dec_out, (-1, n_vars, dec_out.shape[-2], dec_out.shape[-1]))
+        dec_out = torch.reshape(dec_out, (-1, n_vars, dec_out.shape[-2], dec_out.shape[-1]))
         dec_out = dec_out.permute(0, 1, 3, 2).contiguous()
 
-        # 【核心修复 4】: 将大模型输出从 Float16 转换回 Float32 以匹配 output_projection
-        dec_out = self.output_projection(dec_out[:, :, :, -self.patch_nums:].to(x_main.dtype))
+        # 【核心修复 4】: 转换回 Float32 以进行投影
+        dec_out = self.output_projection(dec_out[:, :, :, -n_main:].to(x_main.dtype))
         dec_out = dec_out.permute(0, 2, 1).contiguous()
 
         if hasattr(self, 'normalize_main'):
