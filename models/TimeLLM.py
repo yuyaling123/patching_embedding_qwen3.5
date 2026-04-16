@@ -143,7 +143,6 @@ class Model(nn.Module):
         # ===== Qwen 分支 (适配 V100 16G + 9B模型) =====
         elif 'qwen' in configs.llm_model.lower():
             from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
-            import torch
             import gc
             
             print(f"Loading Qwen model from {configs.llm_model}...")
@@ -378,7 +377,6 @@ class Model(nn.Module):
         llama_enc_out = torch.cat([prompt_embeddings, enc_out.to(prompt_embeddings.dtype)], dim=1)
 
         # 清除前期的拼接缓存，为大模型前向传播让出极限空间
-        import torch
         torch.cuda.empty_cache()
 
         try:
