@@ -175,6 +175,7 @@ class Model(nn.Module):
             )
             
         # ===== Qwen 分支 (终极修复区) =====
+        # ===== Qwen 分支 (适配 V100 16G + 9B模型) =====
         elif 'qwen' in configs.llm_model.lower():
             from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
             import torch
@@ -186,7 +187,7 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # V100 16G 显存，对于 9B 模型，我们可以安全跑到 24 层！
+            # V100 16G 显存跑 9B 模型，最多可安全跑到 24 层
             if configs.llm_layers > 24:
                 print(f"【⚠️系统干预】为保障 V100 16GB 不发生 OOM，已将层数截断至 24 层！")
                 configs.llm_layers = 24
@@ -196,7 +197,7 @@ class Model(nn.Module):
             gc.collect()
             torch.cuda.empty_cache()
             
-            # 【精准白名单映射】保证没有任何多余的层被读进显卡
+            # 【精准白名单映射】保证没有任何多余的层被读进显存
             custom_device_map = {
                 "model.embed_tokens": 0,
                 "model.norm": 0,
@@ -228,13 +229,14 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 对齐 Padding Token 以免报错
+            # 【修复报错的核心位置】
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             self.llm_model.config.pad_token_id = self.tokenizer.pad_token_id
-                
-            # 获取 Qwen 的 hidden_size 供后续特征投影使用
-            self.llm_dim = self.llm_config.hidden_size 
+            
+            # 直接赋值为外面传进来的维度(4096)，不要再去 config 里读取 hidden_size
+            self.llm_dim = configs.llm_dim
+            self.d_llm = configs.llm_dim
         # ====================================
         
         else:
