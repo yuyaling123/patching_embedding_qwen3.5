@@ -339,6 +339,9 @@ class Model(nn.Module):
         else:
             lags = self.calc_lags(x_main_flat)
             
+        # 【核心安全防御】：如果 lags 返回的是未解包的 Tuple (比如包含了 values 和 indices)，强制提取 indices
+        if isinstance(lags, tuple):
+            lags = lags[1]
         trends = x_main_flat.diff(dim=1).sum(dim=1)
 
         prompt = []
