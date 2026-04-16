@@ -36,6 +36,6 @@ D:\Anaconda3\envs\timellm\python.exe run_main.py ^
   --learning_rate 0.0001 ^
   --llm_model /mnt/workspace/local_models/Qwen3.5-27B ^
   --llm_dim 5120 ^
-  --llm_layers 32
+  --llm_layers 14
 
 pause
