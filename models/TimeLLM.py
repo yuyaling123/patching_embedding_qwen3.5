@@ -349,7 +349,13 @@ class Model(nn.Module):
             min_values_str = str(int(min_values[b]))
             max_values_str = str(int(max_values[b]))
             median_values_str = str(int(medians[b]))
-            lags_values_str = str(int(lags[b]))
+            if isinstance(lags[b], torch.Tensor):
+                if lags[b].numel() > 1:
+                    lags_values_str = ', '.join([str(int(val)) for val in lags[b]])
+                else:
+                    lags_values_str = str(int(lags[b].item()))
+            else:
+                lags_values_str = str(lags[b])
             
             prompt_content = (
                 f"<|start_prompt|>Dataset description: {self.description}"
