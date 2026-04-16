@@ -152,9 +152,10 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            if configs.llm_layers > 24:
-                print(f"【⚠️系统干预】为保障 V100 16GB 不发生 OOM，已将层数截断至 24 层！")
-                configs.llm_layers = 24
+            # 【终极显存保护】：训练时前向与反向传播会急剧占用显存，V100(16G)最多只能安全跑到 8 层
+            if configs.llm_layers > 8:
+                print(f"【⚠️系统干预】为保障 V100 16GB 训练时不发生 OOM，已将层数强行截断至 8 层！")
+                configs.llm_layers = 8
             
             self.llm_config.num_hidden_layers = configs.llm_layers
             
@@ -186,6 +187,12 @@ class Model(nn.Module):
                 quantization_config=quantization_config,
                 low_cpu_mem_usage=True
             )
+
+            # 【核心显存优化】：开启梯度检查点 (Gradient Checkpointing)，大幅度压缩反向传播时的激活值显存占用
+            if hasattr(self.llm_model, "gradient_checkpointing_enable"):
+                self.llm_model.gradient_checkpointing_enable()
+                print("【系统】已开启梯度检查点 (Gradient Checkpointing)，用极少的计算时间换取大量的训练显存空间！")
+            
             self.tokenizer = AutoTokenizer.from_pretrained(
                 configs.llm_model,
                 trust_remote_code=True
@@ -219,7 +226,6 @@ class Model(nn.Module):
         self.causal_prompt = getattr(configs, 'causal_prompt', '')
         self.dropout = nn.Dropout(configs.dropout)
 
-        # 【核心修复】: 移除了本地不存在的 padding_val，并删除了多余的 patch_embedding_main
         self.patch_embedding = PatchEmbedding(
             configs.d_model, 
             self.patch_len, 
