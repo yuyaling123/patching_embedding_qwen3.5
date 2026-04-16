@@ -45,7 +45,7 @@ BASE_ARGS = [
     '--batch_size', '1', # Decreased to 1 to avoid OOM
     '--learning_rate', '0.0001', # Reduced from 0.0005 to 0.0001 for finer convergence
     '--llm_layers', '24', # Maintained at 24 (防止 CUDA Out of Memory)
-    '--train_epochs', '5', # Maintained at 10
+    '--train_epochs', '3', # Maintained at 3
     '--patience', '3',     # Maintained at 3
     '--llm_model', '/mnt/workspace/local_models/Qwen3.5-9B', 
     '--llm_dim', '4096',
