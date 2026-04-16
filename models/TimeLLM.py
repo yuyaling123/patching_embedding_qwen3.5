@@ -219,23 +219,20 @@ class Model(nn.Module):
         self.causal_prompt = getattr(configs, 'causal_prompt', '')
         self.dropout = nn.Dropout(configs.dropout)
 
-        # 提取 padding，加入容错：若未配置则默认为 0
-        padding_val = getattr(configs, 'padding', 0)
-
-        # 【核心修复 1】: 这里原先误用了不存在的 self.d_model，已修正为 configs.d_model
+        # 【核心修复】: 移除了本地不存在的 padding_val，并删除了多余的 patch_embedding_main
         self.patch_embedding = PatchEmbedding(
             configs.d_model, 
             self.patch_len, 
             self.stride, 
-            padding_val,  
             configs.dropout   
         )
         
-        self.patch_embedding_main = PatchEmbedding(
-            configs.d_model, self.patch_len, self.stride, padding_val, configs.dropout)
-        
         self.patch_embedding_cov = PatchEmbedding(
-            configs.d_model, self.patch_len, self.stride, padding_val, configs.dropout) if self.cov_dim > 0 else None
+            configs.d_model, 
+            self.patch_len, 
+            self.stride, 
+            configs.dropout
+        ) if self.cov_dim > 0 else None
 
         self.word_embeddings = self.llm_model.get_input_embeddings().weight
         self.vocab_size = self.word_embeddings.shape[0]
@@ -381,7 +378,6 @@ class Model(nn.Module):
         dec_out = torch.reshape(dec_out, (-1, n_vars, dec_out.shape[-2], dec_out.shape[-1]))
         dec_out = dec_out.permute(0, 1, 3, 2).contiguous()
 
-        # 【核心修复 2】: 原先这里误写为了 -n_main:，应该还原成取最后一个维度的时间 Patch 数量
         dec_out = self.output_projection(dec_out[:, :, :, -self.patch_nums:].to(x_main.dtype))
         dec_out = dec_out.permute(0, 2, 1).contiguous()
 
