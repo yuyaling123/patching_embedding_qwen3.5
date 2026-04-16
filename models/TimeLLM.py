@@ -157,8 +157,27 @@ class Model(nn.Module):
                     local_files_only=False
                 )
         # ===== Qwen 分支 =====
+        elif configs.llm_model == 'LLAMA':
+            self.llama_config = LlamaConfig.from_pretrained('/mnt/alps/modelhub/PretrainModel/llama-7b-hf')
+            self.llama_config.num_hidden_layers = configs.llm_layers
+            self.llama_config.output_attentions = True
+            self.llama_config.output_hidden_states = True
+            self.llm_model = LlamaModel.from_pretrained(
+                '/mnt/alps/modelhub/PretrainModel/llama-7b-hf',
+                trust_remote_code=True,
+                local_files_only=True,
+                config=self.llama_config,
+            )
+            self.tokenizer = LlamaTokenizer.from_pretrained(
+                '/mnt/alps/modelhub/PretrainModel/llama-7b-hf',
+                trust_remote_code=True,
+                local_files_only=True
+            )
+            
+        # ===== Qwen 分支 (终极修复区) =====
         elif 'qwen' in configs.llm_model.lower():
-            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
+            # 注意：这里我们改用了 AutoModel，这能瞬间丢掉 1.55GB 的 LM Head 垃圾包袱！
+            from transformers import AutoModel, AutoTokenizer, AutoConfig, BitsAndBytesConfig
             import torch
             import gc
             
@@ -168,20 +187,16 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 【终极防爆显存：强制层数上限】
-            # 14层在 16GB V100 上依然会占满 14.7GB 导致 OOM。强行限制最高 4 层！
-            if configs.llm_layers > 4:
-                print(f"【⚠️安全警告】配置的层数 {configs.llm_layers} 会导致 16GB 显存 OOM。已自动为您安全截断至 4 层！")
-                configs.llm_layers = 4
+            # 使用外科手术级加载后，V100 可以轻松跑 14 层！
+            if configs.llm_layers > 14:
+                print(f"【⚠️系统干预】为保障 V100 16GB 不发生 OOM，已将层数从 {configs.llm_layers} 截断至 14 层！")
+                configs.llm_layers = 14
             
-            # 【截断核心 1】：强行修改 Config，只保留用户指定的安全层数
             self.llm_config.num_hidden_layers = configs.llm_layers
             
-            # 清除之前的碎片以防万一
             gc.collect()
             torch.cuda.empty_cache()
             
-            # 纯净的 4-bit 量化，专供 V100
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.float16, 
@@ -189,15 +204,27 @@ class Model(nn.Module):
                 bnb_4bit_quant_type="nf4"
             )
             
-            # 【截断核心 2】：必须把修改后的 config 传进去！
-            self.llm_model = AutoModelForCausalLM.from_pretrained(
+            # 【终极防爆显存：精准白名单映射】
+            # 我们绝不再用 "auto" 或 {"": 0}，它们会把不需要的层也拖进显存。
+            # 这里构建精确的白名单，只把前 N 层拉进 GPU！硬盘上的其他层看都不会看一眼。
+            custom_device_map = {
+                "embed_tokens": 0,
+                "norm": 0,
+                "model.embed_tokens": 0,
+                "model.norm": 0
+            }
+            for i in range(configs.llm_layers):
+                custom_device_map[f"layers.{i}"] = 0
+                custom_device_map[f"model.layers.{i}"] = 0
+            
+            self.llm_model = AutoModel.from_pretrained(
                 configs.llm_model,
-                config=self.llm_config,             # <--- 必须加上这一行才能真正截断
+                config=self.llm_config,             
                 trust_remote_code=True,
                 quantization_config=quantization_config,
                 torch_dtype=torch.float16,
                 attn_implementation="sdpa",
-                device_map={"": 0},                 # <--- 【硬核修复】：禁止 auto 瞎分配！强行锁死在 GPU 0 上
+                device_map=custom_device_map,     # <--- 应用精确白名单
                 low_cpu_mem_usage=True
             )
             self.tokenizer = AutoTokenizer.from_pretrained(
