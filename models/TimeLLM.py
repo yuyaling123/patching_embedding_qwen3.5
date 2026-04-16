@@ -160,6 +160,7 @@ class Model(nn.Module):
         elif 'qwen' in configs.llm_model.lower():
             from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig, BitsAndBytesConfig
             import torch
+            import gc
             
             print(f"Loading Qwen model from {configs.llm_model}...")
             self.llm_config = AutoConfig.from_pretrained(
@@ -167,8 +168,18 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 【截断核心 1】：强行修改 Config，只保留用户指定的层数（例如 14 层）
+            # 【终极防爆显存：强制层数上限】
+            # 14层在 16GB V100 上依然会占满 14.7GB 导致 OOM。强行限制最高 8 层！
+            if configs.llm_layers > 8:
+                print(f"【⚠️安全警告】配置的层数 {configs.llm_layers} 会导致 16GB 显存 OOM。已自动为您安全截断至 8 层！")
+                configs.llm_layers = 8
+            
+            # 【截断核心 1】：强行修改 Config，只保留用户指定的安全层数
             self.llm_config.num_hidden_layers = configs.llm_layers
+            
+            # 清除之前的碎片以防万一
+            gc.collect()
+            torch.cuda.empty_cache()
             
             # 纯净的 4-bit 量化，专供 V100
             quantization_config = BitsAndBytesConfig(
