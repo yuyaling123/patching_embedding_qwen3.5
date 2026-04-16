@@ -263,13 +263,18 @@ class Model(nn.Module):
         self.dropout = nn.Dropout(configs.dropout)
 
         self.patch_embedding = PatchEmbedding(
-            self.d_model, patch_len, stride, padding, dropout)
+            self.d_model, 
+            self.patch_len, 
+            self.stride, 
+            configs.padding,  # 从 configs 获取 padding
+            configs.dropout   # 从 configs 获取 dropout
+        )
         
         self.patch_embedding_main = PatchEmbedding(
-            configs.d_model, self.patch_len, self.stride, configs.dropout)
+            configs.d_model, self.patch_len, self.stride, configs.padding,configs.dropout)
         
         self.patch_embedding_cov = PatchEmbedding(
-            configs.d_model, self.patch_len, self.stride, configs.dropout) if self.cov_dim > 0 else None
+            configs.d_model, self.patch_len, self.stride, configs.padding,configs.dropout) if self.cov_dim > 0 else None
 
         self.word_embeddings = self.llm_model.get_input_embeddings().weight
         self.vocab_size = self.word_embeddings.shape[0]
