@@ -152,10 +152,10 @@ class Model(nn.Module):
                 trust_remote_code=True
             )
             
-            # 【终极显存保护】：训练时前向与反向传播会急剧占用显存，V100(16G)最多只能安全跑到 8 层
-            if configs.llm_layers > 6:
-                print(f"【⚠️系统干预】为保障 V100 16GB 训练时不发生 OOM，已将层数强行截断至 6 层！")
-                configs.llm_layers = 6
+            # 【终极显存保护】：极限截断至 4 层，确保反向传播梯度图有充足的 16G 显存空间！
+            if configs.llm_layers > 4:
+                print(f"【⚠️系统干预】为彻底保障 V100 16GB 训练时不发生 OOM，已将层数强行截断至 4 层！")
+                configs.llm_layers = 4
             
             self.llm_config.num_hidden_layers = configs.llm_layers
             
@@ -188,7 +188,6 @@ class Model(nn.Module):
                 low_cpu_mem_usage=True
             )
 
-            # 【核心显存优化】：开启梯度检查点 (Gradient Checkpointing)，大幅度压缩反向传播时的激活值显存占用
             if hasattr(self.llm_model, "gradient_checkpointing_enable"):
                 self.llm_model.gradient_checkpointing_enable()
                 print("【系统】已开启梯度检查点 (Gradient Checkpointing)，用极少的计算时间换取大量的训练显存空间！")
@@ -340,7 +339,8 @@ class Model(nn.Module):
 
         x_main = x_main.permute(0, 2, 1).contiguous()
 
-        prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=950).input_ids
+        # 【核心显存优化】：大幅降低 Prompt 最大填充长度，避免无谓的 Token 补齐占用显存！
+        prompt_tokens = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=256).input_ids
         prompt_embeddings = self.llm_model.get_input_embeddings()(prompt_tokens.to(x_main.device))
 
         we = self.word_embeddings.to(x_main.dtype)
