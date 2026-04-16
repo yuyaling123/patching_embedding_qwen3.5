@@ -153,9 +153,9 @@ class Model(nn.Module):
             )
             
             # 【终极显存保护】：训练时前向与反向传播会急剧占用显存，V100(16G)最多只能安全跑到 8 层
-            if configs.llm_layers > 8:
+            if configs.llm_layers > 6:
                 print(f"【⚠️系统干预】为保障 V100 16GB 训练时不发生 OOM，已将层数强行截断至 8 层！")
-                configs.llm_layers = 8
+                configs.llm_layers = 6
             
             self.llm_config.num_hidden_layers = configs.llm_layers
             
