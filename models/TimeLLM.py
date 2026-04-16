@@ -308,56 +308,73 @@ class Model(nn.Module):
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         B, T, N_total = x_enc.shape
-        
+
         # --- Dual-Patch Fusion: Split covariates from main sequence ---
-        if self.cov_dim > 0:
+        if hasattr(self, 'cov_dim') and self.cov_dim > 0:
             x_cov = x_enc[:, :, :self.cov_dim].clone()
             x_main = x_enc[:, :, self.cov_dim:].clone()
         else:
             x_cov = None
             x_main = x_enc.clone()
         # --------------------------------------------------------------
-        
+
         # Normalize main and covariate sequences separately
-        x_main = self.normalize_main(x_main, 'norm')
-        if self.cov_dim > 0:
+        if hasattr(self, 'normalize_main'):
+            x_main = self.normalize_main(x_main, 'norm')
+        else:
+            x_main = getattr(self, 'normalize_layers')(x_main, 'norm')
+
+        if hasattr(self, 'cov_dim') and self.cov_dim > 0 and hasattr(self, 'normalize_cov'):
             x_cov = self.normalize_cov(x_cov, 'norm')
 
-        N = x_main.shape[2]
-        x_enc_flat = x_main.permute(0, 2, 1).contiguous().reshape(B * N, T, 1)
+        # 统计特征基于主序列计算
+        B_m, T_m, N_m = x_main.size()
+        x_main_flat = x_main.permute(0, 2, 1).contiguous().reshape(B_m * N_m, T_m, 1)
 
-        # [OPTIMIZATION] Removed verbose stats (min/max/med/lags/trend) to save tokens & compute.
+        min_values = torch.min(x_main_flat, dim=1)[0]
+        max_values = torch.max(x_main_flat, dim=1)[0]
+        medians = torch.median(x_main_flat, dim=1).values
+        lags = self.calc_lags(x_main_flat)
+        trends = x_main_flat.diff(dim=1).sum(dim=1)
+
         prompt = []
-        for b in range(x_enc_flat.shape[0]):
-            # Simplified Prompt
+        for b in range(x_main_flat.shape[0]):
+            min_values_str = str(int(min_values[b]))
+            max_values_str = str(int(max_values[b]))
+            median_values_str = str(int(medians[b]))
+            lags_values_str = str(int(lags[b]))
+            
             prompt_content = (
                 f"<|start_prompt|>Dataset description: {self.description}"
                 f"Task description: forecast the next {str(self.pred_len)} steps given the previous {str(self.seq_len)} steps information; "
+                "Input statistics: "
+                f"min value {min_values_str}, "
+                f"max value {max_values_str}, "
+                f"median value {median_values_str}, "
+                f"the trend of input is {'upward' if trends[b] > 0 else 'downward'}, "
+                f"top 1 freq in power spectrum is {lags_values_str}."
             )
-            
-            if self.causal_prompt:
+
+            if hasattr(self, 'causal_prompt') and self.causal_prompt:
                 prompt_content += f" Causal Relations: {self.causal_prompt}"
             
-            # Additional context if needed, but keeping it minimal:
-            # prompt_content += "Input statistics: omitted for efficiency."
-            
             prompt_content += "<|end_prompt|>"
-            
             prompt.append(prompt_content)
-            
 
-
-        x_enc_flat = x_enc_flat.reshape(B, N, T).permute(0, 2, 1).contiguous()
+        x_main = x_main.permute(0, 2, 1).contiguous()
 
         prompt = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=950).input_ids
         prompt_embeddings = self.llm_model.get_input_embeddings()(prompt.to(x_main.device))  # (batch, prompt_token, dim)
-
-        source_embeddings = self.mapping_layer(self.word_embeddings.permute(1, 0)).permute(1, 0)
-
-        x_main = x_main.permute(0, 2, 1).contiguous()
-        main_tokens, n_main = self.patch_embedding_main(x_main)
         
-        if self.cov_dim > 0:
+        # 【核心修复 1】: 将大模型的词表权重 (Half) 转换为 Float32 以匹配 mapping_layer
+        we = self.word_embeddings.to(x_main.dtype)
+        source_embeddings = self.mapping_layer(we.permute(1, 0)).permute(1, 0)
+        
+        # 【核心修复 2】: patch_embedding 使用原生 Float32 运行，不要强转 float16
+        main_tokens, n_main = self.patch_embedding(x_main)
+
+        # --- 恢复您的 Dual-Patch Fusion Logic ---
+        if hasattr(self, 'cov_dim') and self.cov_dim > 0:
             x_cov = x_cov.permute(0, 2, 1).contiguous()
             cov_tokens, n_cov = self.patch_embedding_cov(x_cov)
             
@@ -379,30 +396,35 @@ class Model(nn.Module):
         else:
             fused_tokens = main_tokens
             n_vars = n_main
-
+            
         enc_out = self.reprogramming_layer(fused_tokens, source_embeddings, source_embeddings)
-        llama_enc_out = torch.cat([prompt_embeddings, enc_out], dim=1)
         
-        # Safe Chunking Logic (Preserved from User Edit)
-        dec_out_list = []
-        chunk_size = 4 
-        for i in range(0, llama_enc_out.shape[0], chunk_size):
-            chunk_input = llama_enc_out[i : i + chunk_size]
-            chunk_out = self.llm_model(inputs_embeds=chunk_input).last_hidden_state
-            dec_out_list.append(chunk_out)
-        
-        dec_out = torch.cat(dec_out_list, dim=0)
+        # 【核心修复 3】: 将 enc_out 转换回 Float16 以匹配大模型的输入规范
+        llama_enc_out = torch.cat([prompt_embeddings, enc_out.to(prompt_embeddings.dtype)], dim=1)
+
+        try:
+            if 'qwen' in self.llm_model.config._name_or_path.lower():
+                 dec_out = self.llm_model(inputs_embeds=llama_enc_out).last_hidden_state
+            else:
+                 dec_out = self.llm_model(inputs_embeds=llama_enc_out).last_hidden_state
+        except AttributeError:
+             # 有些 CausalLM 返回对象结构不同，退回到直接获取序列
+             dec_out = self.llm_model(inputs_embeds=llama_enc_out)[0]
+
         dec_out = dec_out[:, :, :self.d_ff]
 
         dec_out = torch.reshape(
             dec_out, (-1, n_vars, dec_out.shape[-2], dec_out.shape[-1]))
         dec_out = dec_out.permute(0, 1, 3, 2).contiguous()
-        
-        dec_out = dec_out[:, :, :, -self.patch_nums:]
-        
-        dec_out = self.output_projection(dec_out)
+
+        # 【核心修复 4】: 将大模型输出从 Float16 转换回 Float32 以匹配 output_projection
+        dec_out = self.output_projection(dec_out[:, :, :, -self.patch_nums:].to(x_main.dtype))
         dec_out = dec_out.permute(0, 2, 1).contiguous()
-        dec_out = self.normalize_main(dec_out, 'denorm')
+
+        if hasattr(self, 'normalize_main'):
+            dec_out = self.normalize_main(dec_out, 'denorm')
+        else:
+            dec_out = getattr(self, 'normalize_layers')(dec_out, 'denorm')
 
         return dec_out
 
