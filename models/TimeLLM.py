@@ -334,7 +334,11 @@ class Model(nn.Module):
         min_values = torch.min(x_main_flat, dim=1)[0]
         max_values = torch.max(x_main_flat, dim=1)[0]
         medians = torch.median(x_main_flat, dim=1).values
-        lags = self.calc_lags(x_main_flat)
+        if hasattr(self, 'calcute_lags'):
+            lags = self.calcute_lags(x_main_flat)
+        else:
+            lags = self.calc_lags(x_main_flat)
+            
         trends = x_main_flat.diff(dim=1).sum(dim=1)
 
         prompt = []
