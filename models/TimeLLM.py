@@ -370,7 +370,8 @@ class Model(nn.Module):
             cov_tokens_reshaped = cov_tokens.reshape(B, self.cov_dim, -1, D)
             
             attn_score = self.cov_attn_pool(cov_tokens_reshaped)
-            attn_weight = torch.softmax(attn_score, dim=1)
+            # 【NaN防御区 1】：强制将注意力分数转为 float32 计算 softmax，彻底避免 float16 导致 NaN 溢出！
+            attn_weight = torch.softmax(attn_score.to(torch.float32), dim=1).to(attn_score.dtype)
             cov_context = (cov_tokens_reshaped * attn_weight).sum(dim=1)
             
             cov_context_expand = cov_context.unsqueeze(1).expand(-1, self.main_dim, -1, -1)
@@ -454,7 +455,8 @@ class ReprogrammingLayer(nn.Module):
 
         scores = torch.einsum("blhe,she->bhls", target_embedding, source_embedding)
 
-        A = self.dropout(torch.softmax(scale * scores, dim=-1))
+        # 【NaN防御区 2】：强制将注意力 scores 转为 float32 后再计算 softmax，解决大模型数值溢出变 NaN 的绝症！
+        A = self.dropout(torch.softmax(scale * scores.to(torch.float32), dim=-1).to(scores.dtype))
         reprogramming_embedding = torch.einsum("bhls,she->blhe", A, value_embedding)
 
         return reprogramming_embedding
