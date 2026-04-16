@@ -262,6 +262,9 @@ class Model(nn.Module):
 
         self.dropout = nn.Dropout(configs.dropout)
 
+        self.patch_embedding = PatchEmbedding(
+            configs.d_model, configs.patch_len, configs.stride, configs.padding, configs.dropout)
+        
         self.patch_embedding_main = PatchEmbedding(
             configs.d_model, self.patch_len, self.stride, configs.dropout)
         
@@ -345,17 +348,19 @@ class Model(nn.Module):
             lags = lags[1]
             
         # 【核心修复】：将 Tensor 提前转换为 Python 列表避免 ValueError
-        lags_list = lags.detach().cpu().numpy().tolist()
+        lags_cpu = lags.detach().cpu().numpy()
         trends = x_main_flat.diff(dim=1).sum(dim=1)
 
         prompt = []
+
         for b in range(x_main_flat.shape[0]):
             min_values_str = str(int(min_values[b]))
             max_values_str = str(int(max_values[b]))
             median_values_str = str(int(medians[b]))
             
             # 使用已转换的列表构建周期性滞后项字符串
-            lags_values_str = ', '.join(map(str, lags_list))
+            current_lags = lags_cpu[b] if lags_cpu.ndim > 1 else lags_cpu
+            lags_values_str = ', '.join([str(int(lx)) for lx in current_lags])
             
             prompt_content = (
                 f"<|start_prompt|>Dataset description: {self.description}"
